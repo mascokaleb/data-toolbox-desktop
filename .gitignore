@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.log
+# venvs
+# Python virtual environments
+.venv*/
+winenv/
+.venv-mac/
+
+# PyInstaller output
+build/
+dist/
+*.spec
+
+# macOS
+.DS_Store
