@@ -18,7 +18,7 @@ def discover_plugins():
     """
     for src in SCRIPTS_DIR.glob("*.py"):
         try:
-            header = src.read_text().split('"""')[1]
+            header = src.read_text(encoding="utf-8").split('"""')[1]
             meta   = yaml.safe_load(header)
             mod    = importlib.import_module(f"app.scripts.{src.stem}")
             yield meta, mod.main
