@@ -9,7 +9,6 @@ winenv/
 
 # PyInstaller output
 build/
-dist/
 *.spec
 
 # macOS
