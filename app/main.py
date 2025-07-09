@@ -1,31 +1,55 @@
-# app/main.py
+import sys
+import importlib
+import pkgutil
 from pathlib import Path
-import importlib, sys, yaml
 
-from PySide6.QtWidgets import (
-    QApplication, QWidget, QListWidget, QTextBrowser, QPushButton,
-    QFileDialog, QHBoxLayout, QVBoxLayout, QListWidgetItem
-)
+import yaml
+import ast
+import textwrap
+import traceback
 from PySide6.QtCore import QThread, Signal
+from PySide6.QtWidgets import (
+    QApplication,
+    QFileDialog,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
+    QTextBrowser,
+    QHBoxLayout,
+    QVBoxLayout,
+    QWidget,
+)
 
-SCRIPTS_DIR = Path(__file__).parent / "scripts"
+# Determine where the bundled scripts live:
+if getattr(sys, "frozen", False):  # running from a PyInstaller EXE
+    BASE_DIR = Path(sys._MEIPASS) / "app" / "scripts"
+else:                              # running from source
+    BASE_DIR = Path(__file__).parent / "scripts"
+
+SCRIPTS_DIR = BASE_DIR
 
 
 def discover_plugins():
-    """Yield (meta_dict, main_func) for every *.py under app/scripts.
-
-    Malformed YAML headers are skipped but logged to stdout.
     """
-    for src in SCRIPTS_DIR.glob("*.py"):
+    Yield ``(meta_dict, path_to_file)`` pairs for every plug‑in script
+    without importing the module code.
+
+    A plug‑in is any ``*.py`` file in *SCRIPTS_DIR* whose module
+    doc‑string contains a YAML header with at least a ``name`` field.
+    """
+    for file in SCRIPTS_DIR.glob("*.py"):
+        if file.name in ("__init__.py",) or file.name.startswith("_"):
+            continue
         try:
-            header = src.read_text(encoding="utf-8").split('"""')[1]
-            meta   = yaml.safe_load(header)
-            mod    = importlib.import_module(f"app.scripts.{src.stem}")
-            yield meta, mod.main
-        except (IndexError, yaml.YAMLError) as e:
-            print(f"[WARN] Skipping {src.name}: bad YAML header → {e}")
-        except Exception as e:
-            print(f"[WARN] Skipping {src.name}: {e}")
+            # extract the module‑level doc‑string w/o executing code
+            with file.open("r", encoding="utf-8") as fh:
+                tree = ast.parse(fh.read(), filename=str(file))
+            doc = ast.get_docstring(tree) or ""
+            meta = yaml.safe_load(textwrap.dedent(doc))
+            if isinstance(meta, dict) and "name" in meta:
+                yield meta, file
+        except Exception as exc:
+            print(f"[WARN] Skipping {file.name}: {exc}")
 
 
 class Runner(QThread):
@@ -36,7 +60,13 @@ class Runner(QThread):
         self.func, self.kwargs = func, kwargs
 
     def run(self):
-        self.finished.emit(self.func(**self.kwargs))
+        try:
+            result = self.func(**self.kwargs)
+            # success: pack into a tuple so the handler can distinguish
+            self.finished.emit(("ok", result))
+        except Exception:  # catch *everything* so GUI won't silently die
+            tb = traceback.format_exc()
+            self.finished.emit(("error", tb))
 
 
 class MainWindow(QWidget):
@@ -59,7 +89,7 @@ class MainWindow(QWidget):
         root.addLayout(right, 2)
 
         # discover plug-ins
-        self.plugins = {m["name"]: (m, fn) for m, fn in discover_plugins()}
+        self.plugins = {m["name"]: (m, path) for m, path in discover_plugins()}
         for name in self.plugins:
             self.listbox.addItem(QListWidgetItem(name))
 
@@ -94,7 +124,12 @@ class MainWindow(QWidget):
     def _run(self):
         if not self._current_name:
             return
-        meta, fn = self.plugins[self._current_name]
+        meta, path = self.plugins[self._current_name]
+        loader = importlib.machinery.SourceFileLoader(path.stem, str(path))  # pass str, not Path
+        spec   = importlib.util.spec_from_loader(path.stem, loader)
+        mod    = importlib.util.module_from_spec(spec)
+        loader.exec_module(mod)
+        fn     = mod.main
 
         # pick the required files now
         self._selected_files = {}
@@ -115,7 +150,14 @@ class MainWindow(QWidget):
         worker.start()
 
     def _done(self, result, worker):
-        self.output.append(f"<br/><b>✓ Done → {result}</b>")
+        status, payload = result
+        if status == "ok":
+            self.output.append(f"<br/><b>✓ Done → {payload}</b>")
+        else:  # ("error", traceback)
+            self.output.append(
+                "<br/><span style='color:red'><b>✗ Script crashed</b></span>"
+                f"<pre>{payload}</pre>"
+            )
         self.run_btn.setEnabled(True)
         if worker in self._workers:
             self._workers.remove(worker)
