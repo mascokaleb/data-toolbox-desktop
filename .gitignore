@@ -13,3 +13,17 @@ build/
 
 # macOS
 .DS_Store
+
+# distribution
+dist/
+dist/
+build/
+*.exe
+*.dmg
+*.pkg
+*.zip
+*.spec
+__pycache__/
+*.pyc
+.venv*/
+.env
