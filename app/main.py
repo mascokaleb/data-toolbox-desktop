@@ -101,6 +101,7 @@ class MainWindow(QWidget):
         self._current_name   = None
         self._selected_files = {}
         self._workers        = []   # keep QThread objects alive while they run
+        self._last_dir      = str(Path.home())
 
     def _choose(self, item):
         if not item:
@@ -133,13 +134,18 @@ class MainWindow(QWidget):
 
         # pick the required files now
         self._selected_files = {}
+        filters = meta.get("file_filters", {})
         for key, label in meta["required_files"].items():
-            fname, _ = QFileDialog.getOpenFileName(self, f"Select {label}")
+            # Prefer a per‑file filter from metadata; fall back to Excel + All Files
+            filter_str = filters.get(key, "Excel Files (*.xlsx *.xls);;All Files (*)")
+            fname, _ = QFileDialog.getOpenFileName(self, f"Select {label}", self._last_dir, filter_str)
             if not fname:
                 self.output.append(f"<i>Cancelled – missing {label}</i>")
                 return
             self._selected_files[key] = Path(fname)
             self.output.append(f"{label}: {fname}")
+            # Remember the last chosen directory for UX
+            self._last_dir = str(Path(fname).parent)
 
         self.run_btn.setEnabled(False)
         self.output.append("\nRunning …")
