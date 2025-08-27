@@ -27,3 +27,14 @@ __pycache__/
 *.pyc
 .venv*/
 .env
+dist/
+build/
+*.exe
+*.dmg
+*.pkg
+*.zip
+*.spec
+__pycache__/
+*.pyc
+.venv*/
+.env
